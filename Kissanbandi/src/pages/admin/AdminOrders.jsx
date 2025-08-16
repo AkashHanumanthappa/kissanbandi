@@ -1,38 +1,26 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ordersApi } from '../../services/api';
 import { toast } from 'react-hot-toast';
-import { 
-  Calendar, 
-  Download, 
-  Filter, 
-  RefreshCcw, 
-  Loader, 
-  AlertCircle, 
-  Search,
-  Eye,
-  Package,
-  TrendingUp,
-  Users,
-  DollarSign,
-  Clock,
-  ChevronDown,
-  ChevronUp,
-  X,
-  SortAsc,
-  SortDesc,
-  Grid,
-  List,
-  Phone,
-  MapPin,
-  Mail
+import {
+  Calendar, Download, Filter, RefreshCcw, Loader, AlertCircle, Search,
+  Eye, Package, TrendingUp, Users, DollarSign, Clock,
+  ChevronDown, ChevronUp, X, SortAsc, SortDesc, Grid, List,
+  Phone
 } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import OrderDetailsModal from '../../components/modals/OrderDetailsModal';
 
-// Constants
+// Framer Motion imports
+import { AnimatePresence, motion } from 'framer-motion';
+
 const ITEMS_PER_PAGE = 10;
 const STATUS_OPTIONS = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+
+const filterPanelVariants = {
+  hidden: { height: 0, opacity: 0 },
+  visible: { height: 'auto', opacity: 1 }
+};
 
 const AdminOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -48,22 +36,19 @@ const AdminOrders = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  
-  // New features state
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState('table'); // 'table' or 'card'
+  const [viewMode, setViewMode] = useState('table');
   const [sortField, setSortField] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedOrders, setSelectedOrders] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
+  // --- API LOADERS ---
   const loadOrders = useCallback(async (page = currentPage) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching orders with filters:', { startDate, endDate, filterStatus, page, searchTerm, sortField, sortOrder });
-      
       const params = {
         page,
         limit: ITEMS_PER_PAGE,
@@ -74,20 +59,14 @@ const AdminOrders = () => {
         ...(startDate && { startDate: startDate.toISOString() }),
         ...(endDate && { endDate: endDate.toISOString() })
       };
-
       const response = await ordersApi.getAllOrders(params);
-      console.log('Orders response:', response);
-
-      if (!response || !response.orders) {
+      if (!response || !response.orders)
         throw new Error('Invalid response format');
-      }
-
       setOrders(response.orders);
       setTotalPages(Math.ceil(response.total / ITEMS_PER_PAGE));
       setCurrentPage(page);
       setError(null);
     } catch (err) {
-      console.error('Error loading orders:', err);
       setError(err.message || 'Failed to load orders');
       toast.error('Failed to load orders');
       setOrders([]);
@@ -100,20 +79,13 @@ const AdminOrders = () => {
     try {
       setStatsLoading(true);
       setError(null);
-      console.log('Fetching order stats with date range:', { startDate, endDate });
-
       const params = {
         ...(startDate && { startDate: startDate.toISOString() }),
         ...(endDate && { endDate: endDate.toISOString() })
       };
-
       const response = await ordersApi.getOrderStats(params);
-      console.log('Order stats response:', response);
-
-      if (!response || typeof response !== 'object') {
+      if (!response || typeof response !== 'object')
         throw new Error('Invalid response format from stats API');
-      }
-
       setOrderStats({
         totalOrders: response.totalOrders || 0,
         totalRevenue: response.totalRevenue || 0,
@@ -122,12 +94,9 @@ const AdminOrders = () => {
         dailyStats: Array.isArray(response.dailyStats) ? response.dailyStats : []
       });
     } catch (err) {
-      console.error('Error loading stats:', err);
       const errorMessage = err.response?.data?.error || err.message || 'Failed to load order statistics';
       setError(errorMessage);
       toast.error(errorMessage);
-      
-      // Set minimal stats to prevent UI breaks
       setOrderStats({
         totalOrders: orders.length,
         totalRevenue: 0,
@@ -141,19 +110,19 @@ const AdminOrders = () => {
   }, [startDate, endDate, orders.length]);
 
   useEffect(() => {
-    loadOrders(1); // Reset to first page when filters change
+    loadOrders(1);
     loadOrderStats();
   }, [startDate, endDate, filterStatus, searchTerm, sortField, sortOrder]);
 
+  // --- STATUS, BULK, EXPORT HANDLERS ---
   const handleStatusUpdate = async (orderId, newStatus) => {
     try {
       setUpdatingStatus(orderId);
       await ordersApi.updateOrderStatus(orderId, newStatus);
-      toast.success('Order status updated successfully');
+      toast.success('Order status updated');
       await loadOrders(currentPage);
       await loadOrderStats();
     } catch (err) {
-      console.error('Error updating status:', err);
       toast.error(err.response?.data?.error || 'Failed to update order status');
     } finally {
       setUpdatingStatus(null);
@@ -165,22 +134,17 @@ const AdminOrders = () => {
       toast.error('No orders selected');
       return;
     }
-
     try {
       setBulkActionLoading(true);
       const orderIds = Array.from(selectedOrders);
-      
-      // Update orders one by one (in a real app, you'd have a bulk API)
       for (const orderId of orderIds) {
         await ordersApi.updateOrderStatus(orderId, newStatus);
       }
-      
-      toast.success(`${orderIds.length} orders updated successfully`);
+      toast.success(`${orderIds.length} orders updated to ${newStatus}`);
       setSelectedOrders(new Set());
       await loadOrders(currentPage);
       await loadOrderStats();
-    } catch (err) {
-      console.error('Error updating orders:', err);
+    } catch {
       toast.error('Failed to update selected orders');
     } finally {
       setBulkActionLoading(false);
@@ -191,23 +155,14 @@ const AdminOrders = () => {
     try {
       setExportLoading(true);
       setError(null);
-      console.log('Exporting orders with filters:', { startDate, endDate, filterStatus });
-
       const params = {
         ...(startDate && { startDate: startDate.toISOString() }),
         ...(endDate && { endDate: endDate.toISOString() }),
         ...(filterStatus && { status: filterStatus }),
         ...(searchTerm && { search: searchTerm })
       };
-
       const response = await ordersApi.exportOrders(params);
-      console.log('Export response type:', response?.type);
-      
-      if (!response) {
-        throw new Error('No response received from export API');
-      }
-
-      // Create and trigger download
+      if (!response) throw new Error('No response received from export API');
       const blob = new Blob([response], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -217,10 +172,8 @@ const AdminOrders = () => {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
-      toast.success('Orders exported successfully');
+      toast.success('Orders exported');
     } catch (err) {
-      console.error('Export error:', err);
       const errorMessage = err.response?.data?.error || err.message || 'Failed to export orders';
       setError(errorMessage);
       toast.error(errorMessage);
@@ -241,74 +194,48 @@ const AdminOrders = () => {
     loadOrderStats();
   };
 
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortOrder('asc');
-    }
-  };
-
+  // --- TABLE/CARD/HELPER UTILITIES ---
   const toggleOrderSelection = (orderId) => {
     const newSelected = new Set(selectedOrders);
-    if (newSelected.has(orderId)) {
-      newSelected.delete(orderId);
-    } else {
-      newSelected.add(orderId);
-    }
+    if (newSelected.has(orderId)) newSelected.delete(orderId);
+    else newSelected.add(orderId);
     setSelectedOrders(newSelected);
   };
-
   const toggleAllOrders = () => {
-    if (selectedOrders.size === orders.length) {
-      setSelectedOrders(new Set());
-    } else {
-      setSelectedOrders(new Set(orders.map(order => order._id)));
+    if (selectedOrders.size === orders.length) setSelectedOrders(new Set());
+    else setSelectedOrders(new Set(orders.map(order => order._id)));
+  };
+  const getStatusBadgeClass = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'delivered': return 'bg-green-100 text-green-800 border-green-200';
+      case 'cancelled': return 'bg-red-100 text-red-800 border-red-200';
+      case 'shipped': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'processing': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'pending': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
-
-  const getStatusBadgeClass = useCallback((status) => {
-    switch (status?.toLowerCase()) {
-      case 'delivered':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'shipped':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'processing':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'pending':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  }, []);
-
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
-      case 'delivered':
-        return <Package className="w-4 h-4" />;
-      case 'shipped':
-        return <TrendingUp className="w-4 h-4" />;
-      case 'processing':
-        return <Clock className="w-4 h-4" />;
-      default:
-        return <Clock className="w-4 h-4" />;
+      case 'delivered': return <Package className="w-4 h-4" />;
+      case 'shipped': return <TrendingUp className="w-4 h-4" />;
+      case 'processing': return <Clock className="w-4 h-4" />;
+      default: return <Clock className="w-4 h-4" />;
     }
   };
-
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <SortAsc className="w-4 h-4 opacity-30" />;
-    return sortOrder === 'asc' ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />;
+    return sortOrder === 'asc'
+      ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />;
   };
 
-  const renderPagination = () => {
-    const pages = [];
-    for (let i = 1; i <= Math.min(5, totalPages); i++) {
-      pages.push(i);
-    }
+  // --- --- ANIMATED COMPONENTS --- ---
 
+  // PAGINATION
+  const renderPagination = () => {
+    if (orders.length === 0) return null;
+    const pages = [];
+    for (let i = 1; i <= Math.min(5, totalPages); i++) pages.push(i);
     return (
       <div className="flex flex-col sm:flex-row justify-between items-center mt-4 px-4 sm:px-6 py-3 bg-green-50 border-t border-green-100">
         <div className="text-sm text-gray-700 mb-2 sm:mb-0">
@@ -318,66 +245,52 @@ const AdminOrders = () => {
           <button
             onClick={() => loadOrders(1)}
             disabled={currentPage === 1 || loading}
-            className="px-2 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200"
-          >
-            First
-          </button>
+            className="px-2 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200 transition"
+          >First</button>
           <button
             onClick={() => loadOrders(currentPage - 1)}
             disabled={currentPage === 1 || loading}
-            className="px-3 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200"
-          >
-            Previous
-          </button>
+            className="px-3 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200 transition"
+          >Previous</button>
           {pages.map(page => (
             <button
               key={page}
               onClick={() => loadOrders(page)}
-              className={`px-3 py-1 text-sm rounded border ${
-                currentPage === page 
-                  ? 'bg-green-600 text-white border-green-600' 
+              className={`px-3 py-1 text-sm rounded border transition
+                ${currentPage === page
+                  ? 'bg-green-600 text-white border-green-600'
                   : 'bg-white text-gray-700 hover:bg-green-50 border-green-200'
-              }`}
-            >
-              {page}
-            </button>
+                }`}
+            >{page}</button>
           ))}
           <button
             onClick={() => loadOrders(currentPage + 1)}
             disabled={currentPage === totalPages || loading}
-            className="px-3 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200"
-          >
-            Next
-          </button>
+            className="px-3 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200 transition"
+          >Next</button>
           <button
             onClick={() => loadOrders(totalPages)}
             disabled={currentPage === totalPages || loading}
-            className="px-2 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200"
-          >
-            Last
-          </button>
+            className="px-2 py-1 text-sm rounded bg-white text-gray-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400 border border-green-200 transition"
+          >Last</button>
         </div>
       </div>
     );
   };
 
-  const handleViewDetails = (order) => {
-    setSelectedOrder(order);
-  };
-
-  const handleCloseModal = () => {
-    setSelectedOrder(null);
-  };
-
-  const renderCardView = () => {
-    if (!Array.isArray(orders)) {
-      return null;
-    }
-
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  // CARDS
+  const renderCardView = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <AnimatePresence>
         {orders.map((order) => (
-          <div key={order._id} className="bg-white rounded-lg shadow-md border border-green-100 hover:shadow-lg transition-shadow">
+          <motion.div
+            key={order._id}
+            initial={{ opacity: 0, scale: 0.95, y: 30 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.93, y: 30 }}
+            transition={{ type: "spring", stiffness: 190, damping: 19, duration: 0.17 }}
+            className="bg-white rounded-lg shadow-md border border-green-100 hover:shadow-lg transition-shadow"
+          >
             <div className="p-4">
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center space-x-2">
@@ -394,7 +307,6 @@ const AdminOrders = () => {
                   <span className="capitalize">{order.status || 'pending'}</span>
                 </span>
               </div>
-              
               <div className="space-y-2 mb-4">
                 <div className="flex items-center space-x-2 text-sm text-gray-600">
                   <Users className="w-4 h-4" />
@@ -415,7 +327,6 @@ const AdminOrders = () => {
                   </div>
                 )}
               </div>
-
               <div className="mb-4">
                 <div className="text-xs text-gray-500 mb-1">Items ({order.items?.length || 0})</div>
                 <div className="text-sm text-gray-700 max-h-16 overflow-y-auto">
@@ -429,15 +340,16 @@ const AdminOrders = () => {
                   )}
                 </div>
               </div>
-
               <div className="flex space-x-2">
-                <button
-                  onClick={() => handleViewDetails(order)}
+                <motion.button
+                  onClick={() => setSelectedOrder(order)}
                   className="flex-1 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center space-x-1"
+                  whileTap={{ scale: 0.96 }}
+                  whileHover={{ scale: 1.04 }}
                 >
                   <Eye className="w-4 h-4" />
                   <span>View Details</span>
-                </button>
+                </motion.button>
                 <select
                   value={order.status || 'pending'}
                   onChange={(e) => handleStatusUpdate(order._id, e.target.value)}
@@ -452,66 +364,58 @@ const AdminOrders = () => {
                 </select>
               </div>
             </div>
-          </div>
+          </motion.div>
         ))}
-      </div>
-    );
-  };
+      </AnimatePresence>
+    </div>
+  );
 
-  const renderTableView = () => {
-    if (!Array.isArray(orders)) {
-      return null;
-    }
-
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-green-200">
-          <thead className="bg-green-50">
-            <tr>
-              <th className="px-3 sm:px-6 py-3 text-left">
-                <input
-                  type="checkbox"
-                  checked={selectedOrders.size === orders.length && orders.length > 0}
-                  onChange={toggleAllOrders}
-                  className="rounded border-green-300 text-green-600 focus:ring-green-500"
-                />
-              </th>
-              <th 
-                className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider cursor-pointer hover:bg-green-100"
-                onClick={() => handleSort('_id')}
-              >
-                <div className="flex items-center space-x-1">
-                  <span>Order ID</span>
-                  <SortIcon field="_id" />
-                </div>
-              </th>
-              <th 
-                className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider cursor-pointer hover:bg-green-100 hidden sm:table-cell"
-                onClick={() => handleSort('user.name')}
-              >
-                <div className="flex items-center space-x-1">
-                  <span>Customer</span>
-                  <SortIcon field="user.name" />
-                </div>
-              </th>
-              <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider hidden md:table-cell">Items</th>
-              <th 
-                className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider cursor-pointer hover:bg-green-100"
-                onClick={() => handleSort('totalAmount')}
-              >
-                <div className="flex items-center space-x-1">
-                  <span>Total</span>
-                  <SortIcon field="totalAmount" />
-                </div>
-              </th>
-              <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider">Status</th>
-              <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider hidden lg:table-cell">Contact</th>
-              <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-green-100">
+  // TABLE
+  const renderTableView = () => (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-green-200">
+        <thead className="bg-green-50">
+          <tr>
+            <th className="px-3 sm:px-6 py-3 text-left">
+              <input
+                type="checkbox"
+                checked={selectedOrders.size === orders.length && orders.length > 0}
+                onChange={toggleAllOrders}
+                className="rounded border-green-300 text-green-600 focus:ring-green-500"
+              />
+            </th>
+            <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider cursor-pointer hover:bg-green-100" onClick={() => {
+              setSortField('_id'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            }}>
+              <div className="flex items-center space-x-1"><span>Order ID</span><SortIcon field="_id" /></div>
+            </th>
+            <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider cursor-pointer hover:bg-green-100 hidden sm:table-cell" onClick={() => {
+              setSortField('user.name'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            }}>
+              <div className="flex items-center space-x-1"><span>Customer</span><SortIcon field="user.name" /></div>
+            </th>
+            <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider hidden md:table-cell">Items</th>
+            <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider cursor-pointer hover:bg-green-100" onClick={() => {
+              setSortField('totalAmount'); setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+            }}>
+              <div className="flex items-center space-x-1"><span>Total</span><SortIcon field="totalAmount" /></div>
+            </th>
+            <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider">Status</th>
+            <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider hidden lg:table-cell">Contact</th>
+            <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-green-800 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-green-100">
+          <AnimatePresence>
             {orders.map((order) => (
-              <tr key={order._id} className="hover:bg-green-50 transition-colors">
+              <motion.tr
+                key={order._id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 16 }}
+                transition={{ duration: 0.20 }}
+                className="hover:bg-green-50 transition-colors"
+              >
                 <td className="px-3 sm:px-6 py-4">
                   <input
                     type="checkbox"
@@ -547,10 +451,14 @@ const AdminOrders = () => {
                 </td>
                 <td className="px-3 sm:px-6 py-4">
                   {updatingStatus === order._id ? (
-                    <div className="flex items-center">
+                    <motion.div
+                      animate={{ opacity: [0.7, 1, 0.7] }}
+                      transition={{ duration: 1.0, repeat: Infinity }}
+                      className="inline-flex items-center"
+                    >
                       <Loader className="w-4 h-4 animate-spin mr-2 text-green-600" />
                       <span className="text-sm text-gray-500">Updating...</span>
-                    </div>
+                    </motion.div>
                   ) : (
                     <select
                       value={order.status || 'pending'}
@@ -577,151 +485,177 @@ const AdminOrders = () => {
                   </div>
                 </td>
                 <td className="px-3 sm:px-6 py-4">
-                  <button
-                    onClick={() => handleViewDetails(order)}
+                  <motion.button
+                    onClick={() => setSelectedOrder(order)}
                     className="text-green-600 hover:text-green-900 text-sm font-medium flex items-center space-x-1"
+                    whileTap={{ scale: 0.95 }}
                   >
                     <Eye className="w-4 h-4" />
                     <span className="hidden sm:inline">View</span>
-                  </button>
+                  </motion.button>
                 </td>
-              </tr>
+              </motion.tr>
             ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
+          </AnimatePresence>
+        </tbody>
+      </table>
+    </div>
+  );
 
-  if (loading && !orders.length) {
+  // --- LOADING & ERROR STATES ---
+  if (loading && !orders.length)
     return (
       <div className="flex justify-center items-center min-h-screen bg-green-50">
-        <div className="flex flex-col items-center bg-white p-8 rounded-lg shadow-lg">
-          <Loader className="w-8 h-8 animate-spin text-green-600 mb-4" />
+        <motion.div
+          className="flex flex-col items-center bg-white p-8 rounded-lg shadow-lg"
+          initial={{ opacity: 0, scale: 0.92 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 1.7, ease: 'linear' }}
+          >
+            <Loader className="w-8 h-8 text-green-600 mb-4" />
+          </motion.div>
           <p className="text-gray-600">Loading orders...</p>
-        </div>
+        </motion.div>
       </div>
     );
-  }
 
-  if (error && !orders.length) {
+  if (error && !orders.length)
     return (
       <div className="p-4 sm:p-6 bg-green-50 min-h-screen">
-        <div className="max-w-2xl mx-auto bg-white rounded-xl p-6 shadow-lg border border-red-200">
+        <motion.div
+          className="max-w-2xl mx-auto bg-white rounded-xl p-6 shadow-lg border border-red-200"
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
           <div className="flex items-center space-x-3">
             <AlertCircle className="w-6 h-6 text-red-600" />
             <h2 className="text-lg font-medium text-red-800">Error Loading Orders</h2>
           </div>
           <p className="mt-2 text-red-600">{error}</p>
-          <button 
+          <motion.button
             onClick={() => loadOrders(1)}
             className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
+            whileTap={{ scale: 0.96 }}
+          >Try Again</motion.button>
+        </motion.div>
       </div>
     );
-  }
 
+  // --- MAIN RENDER ---
   return (
     <div className="min-h-screen bg-green-50">
       <div className="container mx-auto px-4 py-6 sm:py-8">
         {/* Header */}
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
-            <h1 className="text-2xl sm:text-3xl font-bold text-green-900 mb-2 sm:mb-0">Orders Management</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-green-900 mb-2 sm:mb-0">
+              Orders Management
+            </h1>
             <div className="flex items-center space-x-2">
-              <button
+              <motion.button
                 onClick={() => setViewMode(viewMode === 'table' ? 'card' : 'table')}
                 className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                whileTap={{ scale: 0.94 }}
+                whileHover={{ scale: 1.06 }}
               >
                 {viewMode === 'table' ? <Grid className="w-5 h-5" /> : <List className="w-5 h-5" />}
-              </button>
-              <button
+              </motion.button>
+              <motion.button
                 onClick={() => setShowFilters(!showFilters)}
                 className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors sm:hidden"
+                whileTap={{ scale: 0.94 }}
               >
                 <Filter className="w-5 h-5" />
-              </button>
+              </motion.button>
             </div>
           </div>
 
-          {/* Search and Filters */}
-          <div className={`space-y-4 ${showFilters ? 'block' : 'hidden sm:block'}`}>
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-green-500 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search orders by ID, customer name, or phone..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              <DatePicker
-                selectsRange={true}
-                startDate={startDate}
-                endDate={endDate}
-                onChange={(update) => {
-                  setDateRange(update);
-                  setCurrentPage(1);
-                }}
-                isClearable={true}
-                placeholderText="Select date range"
-                className="w-full sm:w-auto px-4 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-              />
-              <select
-                value={filterStatus}
-                onChange={(e) => {
-                  setFilterStatus(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full sm:w-auto px-4 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+          {/* Animated Filters/Search Panel */}
+          <AnimatePresence initial={false}>
+            {showFilters || window.innerWidth >= 640 ? (
+              <motion.div
+                className="space-y-4"
+                key="filters"
+                initial="hidden"
+                animate="visible"
+                exit="hidden"
+                variants={filterPanelVariants}
+                transition={{ duration: 0.20 }}
               >
-                <option value="">All Statuses</option>
-                {STATUS_OPTIONS.map(status => (
-                  <option key={status} value={status}>
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </option>
-                ))}
-              </select>
-              
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={resetFilters}
-                  className="px-4 py-2 text-sm text-green-600 hover:text-green-800 hover:bg-green-100 flex items-center space-x-2 rounded-lg transition-colors border border-green-300"
-                >
-                  <RefreshCcw className="w-4 h-4" />
-                  <span>Reset</span>
-                </button>
-                <button
-                  onClick={handleExportOrders}
-                  disabled={exportLoading}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {exportLoading ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-green-500 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Search orders by ID, customer name, or phone..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
                   )}
-                  <span>Export</span>
-                </button>
-              </div>
-            </div>
-          </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                  <DatePicker
+                    selectsRange={true}
+                    startDate={startDate}
+                    endDate={endDate}
+                    onChange={(update) => {
+                      setDateRange(update);
+                      setCurrentPage(1);
+                    }}
+                    isClearable={true}
+                    placeholderText="Select date range"
+                    className="w-full sm:w-auto px-4 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+                  />
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => {
+                      setFilterStatus(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+                  >
+                    <option value="">All Statuses</option>
+                    {STATUS_OPTIONS.map(status => (
+                      <option key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex flex-wrap gap-2">
+                    <motion.button
+                      onClick={resetFilters}
+                      className="px-4 py-2 text-sm text-green-600 hover:text-green-800 hover:bg-green-100 flex items-center space-x-2 rounded-lg transition-colors border border-green-300"
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <RefreshCcw className="w-4 h-4" /> <span>Reset</span>
+                    </motion.button>
+                    <motion.button
+                      onClick={handleExportOrders}
+                      disabled={exportLoading}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      {exportLoading
+                        ? <Loader className="w-4 h-4 animate-spin" />
+                        : <Download className="w-4 h-4" />}
+                      <span>Export</span>
+                    </motion.button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
           {/* Mobile filter toggle */}
           <button
@@ -730,59 +664,69 @@ const AdminOrders = () => {
           >
             {showFilters ? (
               <div className="flex items-center justify-center space-x-2">
-                <ChevronUp className="w-4 h-4" />
-                <span>Hide Filters</span>
+                <ChevronUp className="w-4 h-4" /><span>Hide Filters</span>
               </div>
             ) : (
               <div className="flex items-center justify-center space-x-2">
-                <ChevronDown className="w-4 h-4" />
-                <span>Show Filters</span>
+                <ChevronDown className="w-4 h-4" /><span>Show Filters</span>
               </div>
             )}
           </button>
         </div>
 
-        {/* Bulk Actions */}
-        {selectedOrders.size > 0 && (
-          <div className="mb-6 p-4 bg-green-100 rounded-lg border border-green-200">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="text-sm text-green-800">
-                {selectedOrders.size} order{selectedOrders.size > 1 ? 's' : ''} selected
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {STATUS_OPTIONS.map(status => (
-                  <button
-                    key={status}
-                    onClick={() => handleBulkStatusUpdate(status)}
-                    disabled={bulkActionLoading}
-                    className="px-3 py-1 text-xs bg-white text-green-700 rounded-lg hover:bg-green-50 border border-green-300 disabled:opacity-50 transition-colors"
+        {/* Bulk Actions Bar */}
+        <AnimatePresence>
+          {selectedOrders.size > 0 && (
+            <motion.div
+              className="mb-6 p-4 bg-green-100 rounded-lg border border-green-200"
+              initial={{ opacity: 0, y: -24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="text-sm text-green-800">
+                  {selectedOrders.size} order{selectedOrders.size > 1 ? 's' : ''} selected
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {STATUS_OPTIONS.map(status => (
+                    <motion.button
+                      key={status}
+                      onClick={() => handleBulkStatusUpdate(status)}
+                      disabled={bulkActionLoading}
+                      className="px-3 py-1 text-xs bg-white text-green-700 rounded-lg hover:bg-green-50 border border-green-300 disabled:opacity-50 transition-colors"
+                      whileTap={{ scale: 0.97 }}
+                    >
+                      {bulkActionLoading ? (
+                        <Loader className="w-3 h-3 animate-spin" />
+                      ) : (
+                        `Mark as ${status.charAt(0).toUpperCase() + status.slice(1)}`
+                      )}
+                    </motion.button>
+                  ))}
+                  <motion.button
+                    onClick={() => setSelectedOrders(new Set())}
+                    className="px-3 py-1 text-xs text-red-600 hover:bg-red-50 rounded-lg border border-red-300 transition-colors"
+                    whileTap={{ scale: 0.97 }}
                   >
-                    {bulkActionLoading ? (
-                      <Loader className="w-3 h-3 animate-spin" />
-                    ) : (
-                      `Mark as ${status.charAt(0).toUpperCase() + status.slice(1)}`
-                    )}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setSelectedOrders(new Set())}
-                  className="px-3 py-1 text-xs text-red-600 hover:bg-red-50 rounded-lg border border-red-300 transition-colors"
-                >
-                  Clear Selection
-                </button>
+                    Clear Selection
+                  </motion.button>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Order Statistics */}
-        {orderStats && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative">
+        <div className="mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <motion.div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
               {statsLoading && (
-                <div className="absolute inset-0 bg-white/50 flex items-center justify-center rounded-lg">
+                <motion.div className="absolute inset-0 bg-white/50 flex items-center justify-center rounded-lg"
+                  animate={{ opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1.4 }}>
                   <Loader className="w-4 h-4 animate-spin text-green-600" />
-                </div>
+                </motion.div>
               )}
               <div className="flex items-center space-x-3">
                 <div className="p-2 bg-green-100 rounded-lg">
@@ -790,12 +734,12 @@ const AdminOrders = () => {
                 </div>
                 <div>
                   <h3 className="text-sm text-gray-500">Total Orders</h3>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900">{orderStats.totalOrders}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">{orderStats?.totalOrders}</p>
                 </div>
               </div>
-            </div>
-            
-            <div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative">
+            </motion.div>
+            <motion.div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.20, delay: 0.05 }}>
               {statsLoading && (
                 <div className="absolute inset-0 bg-white/50 flex items-center justify-center rounded-lg">
                   <Loader className="w-4 h-4 animate-spin text-green-600" />
@@ -807,12 +751,13 @@ const AdminOrders = () => {
                 </div>
                 <div>
                   <h3 className="text-sm text-gray-500">Total Revenue</h3>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900">₹{orderStats.totalRevenue.toLocaleString()}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    ₹{(orderStats?.totalRevenue || 0).toLocaleString()}</p>
                 </div>
               </div>
-            </div>
-            
-            <div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative">
+            </motion.div>
+            <motion.div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, delay: 0.09 }}>
               {statsLoading && (
                 <div className="absolute inset-0 bg-white/50 flex items-center justify-center rounded-lg">
                   <Loader className="w-4 h-4 animate-spin text-green-600" />
@@ -824,12 +769,13 @@ const AdminOrders = () => {
                 </div>
                 <div>
                   <h3 className="text-sm text-gray-500">Avg. Order Value</h3>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900">₹{orderStats.averageOrderValue.toFixed(0)}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    ₹{orderStats?.averageOrderValue?.toFixed(0) || 0}</p>
                 </div>
               </div>
-            </div>
-            
-            <div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative col-span-2 lg:col-span-1">
+            </motion.div>
+            <motion.div className="bg-white p-4 rounded-lg shadow-md border border-green-100 relative col-span-2 lg:col-span-1"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, delay: 0.13 }}>
               {statsLoading && (
                 <div className="absolute inset-0 bg-white/50 flex items-center justify-center rounded-lg">
                   <Loader className="w-4 h-4 animate-spin text-green-600" />
@@ -842,7 +788,7 @@ const AdminOrders = () => {
                 <div className="flex-1">
                   <h3 className="text-sm text-gray-500 mb-2">Status Breakdown</h3>
                   <div className="space-y-1">
-                    {Object.entries(orderStats.statusBreakdown).slice(0, 3).map(([status, count]) => (
+                    {orderStats && Object.entries(orderStats.statusBreakdown || {}).slice(0, 3).map(([status, count]) => (
                       <div key={status} className="flex justify-between items-center text-xs">
                         <span className="capitalize text-gray-600">{status}</span>
                         <span className="font-medium text-gray-900">{count}</span>
@@ -851,9 +797,9 @@ const AdminOrders = () => {
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           </div>
-        )}
+        </div>
 
         {/* Orders Display */}
         <div className="bg-white rounded-lg shadow-md border border-green-100 overflow-hidden">
@@ -868,8 +814,7 @@ const AdminOrders = () => {
                   value={`${sortField}-${sortOrder}`}
                   onChange={(e) => {
                     const [field, order] = e.target.value.split('-');
-                    setSortField(field);
-                    setSortOrder(order);
+                    setSortField(field); setSortOrder(order);
                   }}
                   className="px-3 py-1 text-sm border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 bg-white"
                 >
@@ -886,51 +831,68 @@ const AdminOrders = () => {
 
           <div className="relative">
             {loading && orders.length > 0 && (
-              <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10">
+              <motion.div
+                className="absolute inset-0 bg-white/50 flex items-center justify-center z-10"
+                animate={{ opacity: [0.7, 1, 0.7] }}
+                transition={{ duration: 1.7, repeat: Infinity }}
+              >
                 <div className="bg-white p-4 rounded-lg shadow-lg flex items-center space-x-3">
                   <Loader className="w-6 h-6 animate-spin text-green-600" />
                   <span className="text-gray-600">Updating orders...</span>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {orders.length === 0 ? (
-              <div className="p-8 text-center">
+              <motion.div
+                className="p-8 text-center"
+                initial={{ opacity: 0, scale: 0.93, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+              >
                 <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No orders found</h3>
                 <p className="text-gray-500 mb-4">Try adjusting your filters or search terms</p>
-                <button
+                <motion.button
                   onClick={resetFilters}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Clear All Filters
-                </button>
-              </div>
+                  whileTap={{ scale: 0.96 }}
+                >Clear All Filters</motion.button>
+              </motion.div>
             ) : (
               <div className="p-0">
-                {viewMode === 'table' ? (
-                  <div className="overflow-hidden">
-                    {renderTableView()}
-                  </div>
-                ) : (
-                  <div className="p-4">
-                    {renderCardView()}
-                  </div>
-                )}
+                {viewMode === 'table'
+                  ? <div className="overflow-hidden">{renderTableView()}</div>
+                  : <div className="p-4">{renderCardView()}</div>
+                }
               </div>
             )}
           </div>
-
           {orders.length > 0 && renderPagination()}
         </div>
 
-        {/* Order Details Modal */}
-        {selectedOrder && (
-          <OrderDetailsModal
-            order={selectedOrder}
-            onClose={handleCloseModal}
-          />
-        )}
+        {/* MODAL: Order Details */}
+        <AnimatePresence>
+          {selectedOrder && (
+            <motion.div
+              key="modal-bg"
+              className="fixed inset-0 z-30 flex items-center justify-center bg-black/40"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.18 } }}
+            >
+              <motion.div
+                key="modal-content"
+                initial={{ opacity: 0, y: 60, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 60, scale: 0.97 }}
+                transition={{ duration: 0.23 }}
+                style={{ zIndex: 40 }}
+              >
+                <OrderDetailsModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
